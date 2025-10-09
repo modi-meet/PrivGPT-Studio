@@ -6,10 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Zap, Star, Github, Twitter, Mail, Menu } from "lucide-react";
 import Link from "next/link";
-import SplashScreen from "./splashScreen";
+import SplashScreen from "../splashScreen";
 import { useState, useEffect } from "react";
 import ScrollToTop from "@/components/ui/scroll-to-top";
-import Layout from "@/components/layout";
 
 export default function HomePage() {
   const [showSplash, setShowSplash] = useState(true);
@@ -28,7 +27,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <Layout>
         {/* Rest of your component remains exactly the same */}
         {/* Hero Section */}
         <section className="py-20 px-4">
@@ -372,7 +370,6 @@ export default function HomePage() {
             </div>
           </div>
         </section>
-      </Layout>
 
       <ScrollToTop />
     </div>

@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
-import SplashScreen from "../splashScreen";
+import SplashScreen from "../../splashScreen";
 import { useState, useEffect } from "react";
 import {
   Github,
@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Head from "next/head";
-import Layout from "@/components/layout";
 
 export default function AboutPage() {
   const [showSplash, setShowSplash] = useState(true);
@@ -84,7 +83,6 @@ export default function AboutPage() {
       </Head>
 
       <div className="min-h-screen bg-background">
-        <Layout>
           {/* Hero */}
           <section className="py-20 px-4 text-center">
             <Badge variant="secondary" className="mb-4">
@@ -442,7 +440,6 @@ export default function AboutPage() {
               </div>
             </div>
           </section>
-        </Layout>
       </div>
     </>
   );

@@ -8,7 +8,7 @@ import { useTheme } from "@/components/theme-provider";
 export default function footer() {
   const { darkMode } = useTheme();
   return (
-    <footer className="border-t py-12 px-4">
+    <footer className="border-t py-12 bg-background px-4">
       <div className="container mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
           <div className="md:col-span-4">

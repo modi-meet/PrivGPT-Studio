@@ -81,6 +81,27 @@ def chat():
         session_name = request.form.get("session_name", "")
         user_timestamp = datetime.now() - timedelta(seconds=10)
 
+        # ====== Inference Parameters ======
+        temperature = float(request.form.get("temperature", 0.7))
+        top_p = float(request.form.get("top_p", 0.9))
+        top_k = int(request.form.get("top_k", 40))
+        max_tokens = int(request.form.get("max_tokens", 2048))
+        frequency_penalty = float(request.form.get("frequency_penalty", 0))
+        presence_penalty = float(request.form.get("presence_penalty", 0))
+        stop_sequence = request.form.get("stop_sequence", "").strip()
+        seed_str = request.form.get("seed", "").strip()
+        seed = int(seed_str) if seed_str else None
+
+        # Build generation config for Gemini
+        generation_config = {
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+            "max_output_tokens": max_tokens,
+        }
+        if stop_sequence:
+            generation_config["stop_sequences"] = [stop_sequence]
+
         # Mentions: fetch context
         mention_session_ids = request.form.getlist("mention_session_ids[]")
         history_context = ""
@@ -124,10 +145,10 @@ def chat():
                 else:
                     # For image/video/etc, handle as media input
                     # Here gemini_model accepts both text + media
-                    response = gemini_model.generate_content([
-                        combined_input,
-                        {"mime_type": uploaded_file.mimetype or "image/jpeg", "data": file_bytes}
-                    ])
+                    response = gemini_model.generate_content(
+                        [combined_input, {"mime_type": uploaded_file.mimetype or "image/jpeg", "data": file_bytes}],
+                        generation_config=generation_config
+                    )
                     latency_ms = 0
                     bot_reply = response.text or "No reply."
                     # Save to DB (with uploaded_file info)
@@ -143,7 +164,19 @@ def chat():
                 "model": model_name,
                 "prompt": combined_input,
                 "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_k": top_k,
+                    "num_predict": max_tokens,
+                    "frequency_penalty": frequency_penalty,
+                    "presence_penalty": presence_penalty,
+                }
             }
+            if stop_sequence:
+                payload["options"]["stop"] = [stop_sequence]
+            if seed is not None:
+                payload["options"]["seed"] = seed
             try:
                 latency_ms = datetime.now()
                 response = requests.post("http://localhost:11434/api/generate", json=payload, timeout=60)
@@ -157,7 +190,7 @@ def chat():
                         model_type = "cloud"
                         model_name = "gemini"
                         latency_ms = datetime.now()
-                        response = gemini_model.generate_content(combined_input)
+                        response = gemini_model.generate_content(combined_input, generation_config=generation_config)
                         latency_ms = int((datetime.now() - latency_ms).total_seconds() * 1000)
                         bot_reply = response.text or f"Local model failed, fallback used: {str(e)}"
                     else:
@@ -169,7 +202,7 @@ def chat():
                 if model_name == "gemini":
                     print(combined_input)
                     latency_ms = datetime.now()
-                    response = gemini_model.generate_content(combined_input)
+                    response = gemini_model.generate_content(combined_input, generation_config=generation_config)
                     latency_ms = int((datetime.now() - latency_ms).total_seconds() * 1000)
                     bot_reply = response.text or "No Reply"
             except Exception as e:
@@ -223,6 +256,27 @@ def chat_stream():
         session_name = request.form.get("session_name", "")
         user_timestamp = datetime.now() - timedelta(seconds=10)
 
+        # ====== Inference Parameters ======
+        temperature = float(request.form.get("temperature", 0.7))
+        top_p = float(request.form.get("top_p", 0.9))
+        top_k = int(request.form.get("top_k", 40))
+        max_tokens = int(request.form.get("max_tokens", 2048))
+        frequency_penalty = float(request.form.get("frequency_penalty", 0))
+        presence_penalty = float(request.form.get("presence_penalty", 0))
+        stop_sequence = request.form.get("stop_sequence", "").strip()
+        seed_str = request.form.get("seed", "").strip()
+        seed = int(seed_str) if seed_str else None
+
+        # Build generation config for Gemini
+        generation_config = {
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+            "max_output_tokens": max_tokens,
+        }
+        if stop_sequence:
+            generation_config["stop_sequences"] = [stop_sequence]
+
         # Mentions: fetch context
         mention_session_ids = request.form.getlist("mention_session_ids[]")
         history_context = ""
@@ -263,10 +317,10 @@ def chat_stream():
                     extracted_text = extract_text_from_pdf_bytes(file_bytes)
                     combined_input = f"{combined_input}\n\n[PDF Content Extracted]\n{extracted_text}"
                 else:
-                    response = gemini_model.generate_content([
-                        combined_input,
-                        {"mime_type": uploaded_file.mimetype or "image/jpeg", "data": file_bytes}
-                    ])
+                    response = gemini_model.generate_content(
+                        [combined_input, {"mime_type": uploaded_file.mimetype or "image/jpeg", "data": file_bytes}],
+                        generation_config=generation_config
+                    )
                     bot_reply = response.text or "No reply."
                     return save_and_return(session_id, session_name, model_name, user_msg, bot_reply, uploaded_file, file_bytes)
 
@@ -284,7 +338,19 @@ def chat_stream():
                             "model": model_name,
                             "prompt": combined_input,
                             "stream": True,
+                            "options": {
+                                "temperature": temperature,
+                                "top_p": top_p,
+                                "top_k": top_k,
+                                "num_predict": max_tokens,
+                                "frequency_penalty": frequency_penalty,
+                                "presence_penalty": presence_penalty,
+                            }
                         }
+                        if stop_sequence:
+                            payload["options"]["stop"] = [stop_sequence]
+                        if seed is not None:
+                            payload["options"]["seed"] = seed
                         response = requests.post("http://localhost:11434/api/generate", json=payload, stream=True, timeout=60)
                         response.raise_for_status()
                         
@@ -312,6 +378,7 @@ def chat_stream():
                             try:
                                 response = gemini_model.generate_content(
                                     combined_input,
+                                    generation_config=generation_config,
                                     stream=True
                                 )
                                 for chunk in response:
@@ -336,6 +403,7 @@ def chat_stream():
                         # Gemini streaming
                         response = gemini_model.generate_content(
                             combined_input,
+                            generation_config=generation_config,
                             stream=True
                         )
                         

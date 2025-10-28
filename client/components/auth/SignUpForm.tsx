@@ -32,7 +32,10 @@ import { Input } from "@/components/ui/input";
 
 const formSchema = z
   .object({
-    email: z.string().email({ message: "Invalid email address." }),
+    email: z
+      .string()
+      .min(1, { message: "Email is required." })
+      .email({ message: "Invalid email address." }),
     password: z
       .string()
       .min(8, { message: "Password must be at least 8 characters." }),
@@ -129,7 +132,7 @@ export function SignUpForm() {
                 <FormItem>
                   <FormLabel>Username</FormLabel>
                   <FormControl>
-                    <Input placeholder="yourusername" {...field} />
+                    <Input placeholder="your username" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -151,8 +154,8 @@ export function SignUpForm() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="male">Male</SelectItem>
                       <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="male">Male</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>

@@ -21,10 +21,16 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import Header from "@/components/ui/header";
+import Footer from "@/components/ui/footer";
 import { Input } from "@/components/ui/input";
+import { Head } from "react-day-picker";
 
 const formSchema = z.object({
-  email: z.string().email({ message: "Invalid email address." }),
+  email: z
+    .string()
+    .min(1, { message: "Email is required." })
+    .email({ message: "Invalid email address." }),
   password: z.string().min(1, { message: "Password is required." }),
 });
 

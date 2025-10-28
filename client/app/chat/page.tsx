@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -2646,196 +2647,217 @@ export default function ChatPage() {
       {/* Configure Model Parameters Modal */}
       <Dialog open={configureModelModal} onOpenChange={setConfigureModelModal}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Configure Model Parameters</DialogTitle>
-            <DialogDescription>
-              Adjust inference-time parameters to control the model's behavior.
-              Note: Frequency and Presence Penalty only work with Ollama models.
-            </DialogDescription>
-          </DialogHeader>
           <div className="grid gap-6 py-4">
-            {/* Seed */}
-            <div className="grid gap-2">
-              <Label htmlFor="seed">Seed (for determinism)</Label>
-              <Input
-                id="seed"
-                type="number"
-                placeholder="Leave empty for random"
-                value={seed}
-                onChange={(e) => setSeed(e.target.value === "" ? "" : Number.parseInt(e.target.value))}
-                className="max-w-[200px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                Random seed for reproducible outputs. Set this + temperature=0 for identical responses. (Ollama only)
-              </p>
-            </div>
-
-            {/* Temperature */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="temperature">Temperature</Label>
-                <span className="text-sm text-muted-foreground">
-                  {temperature}
-                </span>
+            {/* System Prompt Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">System Prompt</h3>
+              <div className="grid gap-2">
+                <textarea
+                  id="systemPrompt"
+                  className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="e.g., You are a helpful assistant that..."
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional system instructions that define the model&apos;s behavior and role.
+                  Works with both Ollama and Gemini models.
+                </p>
               </div>
-              <Input
-                id="temperature"
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={temperature}
-                onChange={(e) => setTemperature(Number.parseFloat(e.target.value))}
-                className="cursor-pointer"
-              />
-              <p className="text-xs text-muted-foreground">
-                Controls randomness. Higher values = more creative output. (0.0 - 2.0)
-              </p>
             </div>
 
-            {/* Top P */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="topP">Top P</Label>
-                <span className="text-sm text-muted-foreground">{topP}</span>
+            {/* Divider */}
+            <Separator className="my-2" />
+
+            {/* Inference Parameters Section */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold">Edit Inference Parameters</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Adjust inference-time parameters to control the model&apos;s behavior.
+                  Note: Frequency and Presence Penalty only work with Ollama models.
+                </p>
               </div>
-              <Input
-                id="topP"
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={topP}
-                onChange={(e) => setTopP(Number.parseFloat(e.target.value))}
-                className="cursor-pointer"
-              />
-              <p className="text-xs text-muted-foreground">
-                Nucleus sampling. Considers tokens until cumulative probability reaches this value. (0.0 - 1.0)
-              </p>
-            </div>
 
-            {/* Top K */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="topK">Top K</Label>
-                <span className="text-sm text-muted-foreground">{topK}</span>
+              <div className="grid gap-6">
+                {/* Seed */}
+                <div className="grid gap-2">
+                  <Label htmlFor="seed">Seed (for determinism)</Label>
+                  <Input
+                    id="seed"
+                    type="text"
+                    placeholder="Leave empty for random"
+                    value={seed}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setSeed("");
+                      } else {
+                        const num = Number.parseInt(val);
+                        if (!isNaN(num)) {
+                          setSeed(num);
+                        }
+                      }
+                    }}
+                    className="max-w-[200px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Random seed for reproducible outputs. Set this + temperature=0 for identical responses. (Ollama only)
+                  </p>
+                </div>
+
+                {/* Temperature */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="temperature">Temperature</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {temperature}
+                    </span>
+                  </div>
+                  <Input
+                    id="temperature"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(Number.parseFloat(e.target.value))}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Controls randomness. Higher values = more creative output. (0.0 - 2.0)
+                  </p>
+                </div>
+
+                {/* Top P */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="topP">Top P</Label>
+                    <span className="text-sm text-muted-foreground">{topP}</span>
+                  </div>
+                  <Input
+                    id="topP"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={topP}
+                    onChange={(e) => setTopP(Number.parseFloat(e.target.value))}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Nucleus sampling. Considers tokens until cumulative probability reaches this value. (0.0 - 1.0)
+                  </p>
+                </div>
+
+                {/* Top K */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="topK">Top K</Label>
+                    <span className="text-sm text-muted-foreground">{topK}</span>
+                  </div>
+                  <Input
+                    id="topK"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={topK}
+                    onChange={(e) => setTopK(Number.parseInt(e.target.value))}
+                    className="max-w-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Consider only the top K tokens for sampling. (1 - 100)
+                  </p>
+                </div>
+
+                {/* Max Tokens */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="maxTokens">Max Tokens</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {maxTokens}
+                    </span>
+                  </div>
+                  <Input
+                    id="maxTokens"
+                    type="number"
+                    min="1"
+                    max="32768"
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(Number.parseInt(e.target.value))}
+                    className="max-w-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum number of tokens to generate. ~4 chars per token. (1 - 32768)
+                  </p>
+                </div>
+
+                {/* Frequency Penalty */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {frequencyPenalty}
+                    </span>
+                  </div>
+                  <Input
+                    id="frequencyPenalty"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={frequencyPenalty}
+                    onChange={(e) =>
+                      setFrequencyPenalty(Number.parseFloat(e.target.value))
+                    }
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Reduces repetition of frequent tokens. Higher = less repetitive. (0.0 - 2.0, Ollama only)
+                  </p>
+                </div>
+
+                {/* Presence Penalty */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="presencePenalty">Presence Penalty</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {presencePenalty}
+                    </span>
+                  </div>
+                  <Input
+                    id="presencePenalty"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={presencePenalty}
+                    onChange={(e) =>
+                      setPresencePenalty(Number.parseFloat(e.target.value))
+                    }
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Encourages new topics by penalizing repeated tokens. (0.0 - 2.0, Ollama only)
+                  </p>
+                </div>
+
+                {/* Stop Sequence */}
+                <div className="grid gap-2">
+                  <Label htmlFor="stopSequence">Stop Sequence</Label>
+                  <Input
+                    id="stopSequence"
+                    type="text"
+                    placeholder="e.g., \n\n, END, etc."
+                    value={stopSequence}
+                    onChange={(e) => setStopSequence(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Sequence where the model will stop generating further tokens.
+                    Leave empty for none.
+                  </p>
+                </div>
               </div>
-              <Input
-                id="topK"
-                type="number"
-                min="1"
-                max="100"
-                value={topK}
-                onChange={(e) => setTopK(Number.parseInt(e.target.value))}
-                className="max-w-[120px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                Consider only the top K tokens for sampling. (1 - 100)
-              </p>
-            </div>
-
-            {/* Max Tokens */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="maxTokens">Max Tokens</Label>
-                <span className="text-sm text-muted-foreground">
-                  {maxTokens}
-                </span>
-              </div>
-              <Input
-                id="maxTokens"
-                type="number"
-                min="1"
-                max="32768"
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(Number.parseInt(e.target.value))}
-                className="max-w-[120px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                Maximum number of tokens to generate. ~4 chars per token. (1 - 32768)
-              </p>
-            </div>
-
-            {/* Frequency Penalty */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
-                <span className="text-sm text-muted-foreground">
-                  {frequencyPenalty}
-                </span>
-              </div>
-              <Input
-                id="frequencyPenalty"
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={frequencyPenalty}
-                onChange={(e) =>
-                  setFrequencyPenalty(Number.parseFloat(e.target.value))
-                }
-                className="cursor-pointer"
-              />
-              <p className="text-xs text-muted-foreground">
-                Reduces repetition of frequent tokens. Higher = less repetitive. (0.0 - 2.0, Ollama only)
-              </p>
-            </div>
-
-            {/* Presence Penalty */}
-            <div className="grid gap-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="presencePenalty">Presence Penalty</Label>
-                <span className="text-sm text-muted-foreground">
-                  {presencePenalty}
-                </span>
-              </div>
-              <Input
-                id="presencePenalty"
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={presencePenalty}
-                onChange={(e) =>
-                  setPresencePenalty(Number.parseFloat(e.target.value))
-                }
-                className="cursor-pointer"
-              />
-              <p className="text-xs text-muted-foreground">
-                Encourages new topics by penalizing repeated tokens. (0.0 - 2.0, Ollama only)
-              </p>
-            </div>
-
-            {/* Stop Sequence */}
-            <div className="grid gap-2">
-              <Label htmlFor="stopSequence">Stop Sequence</Label>
-              <Input
-                id="stopSequence"
-                type="text"
-                placeholder="e.g., \n\n, END, etc."
-                value={stopSequence}
-                onChange={(e) => setStopSequence(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Sequence where the model will stop generating further tokens.
-                Leave empty for none.
-              </p>
-            </div>
-
-            {/* System Prompt */}
-            <div className="grid gap-2">
-              <Label htmlFor="systemPrompt">System Prompt</Label>
-              <textarea
-                id="systemPrompt"
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="e.g., You are a helpful assistant that..."
-                value={systemPrompt}
-                onChange={(e) => setSystemPrompt(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground">
-                Optional system instructions that define the model&apos;s behavior and role.
-                Works with both Ollama and Gemini models.
-              </p>
             </div>
           </div>
           <DialogFooter>

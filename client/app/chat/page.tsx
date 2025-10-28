@@ -67,7 +67,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { MentionsInput, Mention } from "react-mentions";
-import SplashScreen from "../../splashScreen";
+import SplashScreen from "../splashScreen";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import ReactMarkdown from "react-markdown";

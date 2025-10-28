@@ -565,6 +565,7 @@ export default function ChatPage() {
   const [presencePenalty, setPresencePenalty] = useState(0);
   const [stopSequence, setStopSequence] = useState("");
   const [seed, setSeed] = useState<number | "">(""); // Empty string means random seed
+  const [systemPrompt, setSystemPrompt] = useState(""); // System prompt for model behavior
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 4000);
@@ -1080,6 +1081,9 @@ export default function ChatPage() {
     }
     if (seed !== "") {
       formData.append("seed", seed.toString());
+    }
+    if (systemPrompt.trim()) {
+      formData.append("system_prompt", systemPrompt.trim());
     }
 
     // append mention ids
@@ -2817,6 +2821,22 @@ export default function ChatPage() {
                 Leave empty for none.
               </p>
             </div>
+
+            {/* System Prompt */}
+            <div className="grid gap-2">
+              <Label htmlFor="systemPrompt">System Prompt</Label>
+              <textarea
+                id="systemPrompt"
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="e.g., You are a helpful assistant that..."
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional system instructions that define the model&apos;s behavior and role.
+                Works with both Ollama and Gemini models.
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -2831,6 +2851,7 @@ export default function ChatPage() {
                 setPresencePenalty(0);
                 setStopSequence("");
                 setSeed("");
+                setSystemPrompt("");
                 toast.success("Parameters reset to defaults");
               }}
             >

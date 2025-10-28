@@ -6,6 +6,8 @@ from server import gemini_model, mongo
 from bson import ObjectId
 from server.utils.file_utils import allowed_file, extract_text_from_pdf_bytes
 import json
+import google.generativeai as genai
+from server.config import Config
 
 def save_and_return(session_id, session_name, model_name, user_msg, bot_reply, uploaded_file, file_bytes):
     """
@@ -91,6 +93,7 @@ def chat():
         stop_sequence = request.form.get("stop_sequence", "").strip()
         seed_str = request.form.get("seed", "").strip()
         seed = int(seed_str) if seed_str else None
+        system_prompt = request.form.get("system_prompt", "").strip()
 
         # Build generation config for Gemini
         generation_config = {
@@ -177,6 +180,8 @@ def chat():
                 payload["options"]["stop"] = [stop_sequence]
             if seed is not None:
                 payload["options"]["seed"] = seed
+            if system_prompt:
+                payload["system"] = system_prompt
             try:
                 latency_ms = datetime.now()
                 response = requests.post("http://localhost:11434/api/generate", json=payload, timeout=60)
@@ -190,7 +195,15 @@ def chat():
                         model_type = "cloud"
                         model_name = "gemini"
                         latency_ms = datetime.now()
-                        response = gemini_model.generate_content(combined_input, generation_config=generation_config)
+                        # Use model with system instruction if provided
+                        if system_prompt:
+                            model_with_system = genai.GenerativeModel(
+                                "models/gemini-2.5-flash",
+                                system_instruction=system_prompt
+                            )
+                            response = model_with_system.generate_content(combined_input, generation_config=generation_config)
+                        else:
+                            response = gemini_model.generate_content(combined_input, generation_config=generation_config)
                         latency_ms = int((datetime.now() - latency_ms).total_seconds() * 1000)
                         bot_reply = response.text or f"Local model failed, fallback used: {str(e)}"
                     else:
@@ -202,7 +215,15 @@ def chat():
                 if model_name == "gemini":
                     print(combined_input)
                     latency_ms = datetime.now()
-                    response = gemini_model.generate_content(combined_input, generation_config=generation_config)
+                    # Use model with system instruction if provided
+                    if system_prompt:
+                        model_with_system = genai.GenerativeModel(
+                            "models/gemini-2.5-flash",
+                            system_instruction=system_prompt
+                        )
+                        response = model_with_system.generate_content(combined_input, generation_config=generation_config)
+                    else:
+                        response = gemini_model.generate_content(combined_input, generation_config=generation_config)
                     latency_ms = int((datetime.now() - latency_ms).total_seconds() * 1000)
                     bot_reply = response.text or "No Reply"
             except Exception as e:
@@ -266,6 +287,7 @@ def chat_stream():
         stop_sequence = request.form.get("stop_sequence", "").strip()
         seed_str = request.form.get("seed", "").strip()
         seed = int(seed_str) if seed_str else None
+        system_prompt = request.form.get("system_prompt", "").strip()
 
         # Build generation config for Gemini
         generation_config = {
@@ -351,6 +373,8 @@ def chat_stream():
                             payload["options"]["stop"] = [stop_sequence]
                         if seed is not None:
                             payload["options"]["seed"] = seed
+                        if system_prompt:
+                            payload["system"] = system_prompt
                         response = requests.post("http://localhost:11434/api/generate", json=payload, stream=True, timeout=60)
                         response.raise_for_status()
                         
@@ -376,11 +400,23 @@ def chat_stream():
                             bot_reply += fallback_msg
                             yield f"data: {json.dumps({'type': 'chunk', 'text': fallback_msg})}\n\n"
                             try:
-                                response = gemini_model.generate_content(
-                                    combined_input,
-                                    generation_config=generation_config,
-                                    stream=True
-                                )
+                                # Use model with system instruction if provided
+                                if system_prompt:
+                                    model_with_system = genai.GenerativeModel(
+                                        "models/gemini-2.5-flash",
+                                        system_instruction=system_prompt
+                                    )
+                                    response = model_with_system.generate_content(
+                                        combined_input,
+                                        generation_config=generation_config,
+                                        stream=True
+                                    )
+                                else:
+                                    response = gemini_model.generate_content(
+                                        combined_input,
+                                        generation_config=generation_config,
+                                        stream=True
+                                    )
                                 for chunk in response:
                                     try:
                                         chunk_text = chunk.text if chunk.text else ""
@@ -401,12 +437,24 @@ def chat_stream():
                 else:  # Cloud model (Gemini)
                     if model_name == "gemini":
                         # Gemini streaming
-                        response = gemini_model.generate_content(
-                            combined_input,
-                            generation_config=generation_config,
-                            stream=True
-                        )
-                        
+                        # Use model with system instruction if provided
+                        if system_prompt:
+                            model_with_system = genai.GenerativeModel(
+                                "models/gemini-2.5-flash",
+                                system_instruction=system_prompt
+                            )
+                            response = model_with_system.generate_content(
+                                combined_input,
+                                generation_config=generation_config,
+                                stream=True
+                            )
+                        else:
+                            response = gemini_model.generate_content(
+                                combined_input,
+                                generation_config=generation_config,
+                                stream=True
+                            )
+
                         for chunk in response:
                             try:
                                 chunk_text = chunk.text if chunk.text else ""

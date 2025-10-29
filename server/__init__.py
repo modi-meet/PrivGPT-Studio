@@ -32,4 +32,7 @@ def create_app():
     app.register_blueprint(select_model_bp)
     from server.routes.chat_routes import chat_bp
     app.register_blueprint(chat_bp)
+    from server.routes.auth_routes import auth_bp
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+
     return app

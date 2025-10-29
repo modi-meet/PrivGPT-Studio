@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -553,6 +556,17 @@ export default function ChatPage() {
   const [spokenText, setSpokenText] = useState<string>("");
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const canceledByUserRef = useRef<boolean>(false);
+  // Model Configuration Modal & Parameters
+  const [configureModelModal, setConfigureModelModal] = useState(false);
+  const [temperature, setTemperature] = useState(0.7);
+  const [topP, setTopP] = useState(0.9);
+  const [topK, setTopK] = useState(40);
+  const [maxTokens, setMaxTokens] = useState(2048);
+  const [frequencyPenalty, setFrequencyPenalty] = useState(0);
+  const [presencePenalty, setPresencePenalty] = useState(0);
+  const [stopSequence, setStopSequence] = useState("");
+  const [seed, setSeed] = useState<number | "">(""); // Empty string means random seed
+  const [systemPrompt, setSystemPrompt] = useState(""); // System prompt for model behavior
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 4000);
@@ -1055,6 +1069,23 @@ export default function ChatPage() {
     formData.append("model_name", selectedModel);
     formData.append("timestamp", userMessage.timestamp.toISOString());
     if (sessionId) formData.append("session_id", sessionId);
+
+    // append inference parameters
+    formData.append("temperature", temperature.toString());
+    formData.append("top_p", topP.toString());
+    formData.append("top_k", topK.toString());
+    formData.append("max_tokens", maxTokens.toString());
+    formData.append("frequency_penalty", frequencyPenalty.toString());
+    formData.append("presence_penalty", presencePenalty.toString());
+    if (stopSequence.trim()) {
+      formData.append("stop_sequence", stopSequence.trim());
+    }
+    if (seed !== "") {
+      formData.append("seed", seed.toString());
+    }
+    if (systemPrompt.trim()) {
+      formData.append("system_prompt", systemPrompt.trim());
+    }
 
     // append mention ids
     mentionIds.forEach((id) => formData.append("mention_session_ids[]", id));
@@ -2056,9 +2087,13 @@ export default function ChatPage() {
               <Settings className="w-4 h-4 mr-2" />
               Settings
             </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              <Info className="w-4 h-4 mr-2" />
-              Model Info
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              onClick={() => setConfigureModelModal(true)}
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Configure Model
             </Button>
             <Button variant="ghost" className="w-full justify-start" asChild>
               <Link href="/">
@@ -2604,6 +2639,272 @@ export default function ChatPage() {
               onClick={() => handleDeleteChatSession(sessionId)}
             >
               Delete Chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configure Model Parameters Modal */}
+      <Dialog open={configureModelModal} onOpenChange={setConfigureModelModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configure Model</DialogTitle>
+            <DialogDescription>
+              Customize system prompt and inference parameters for the model
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6 py-4">
+            {/* System Prompt Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">System Prompt</h3>
+              <div className="grid gap-2">
+                <textarea
+                  id="systemPrompt"
+                  className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="e.g., You are a helpful assistant that..."
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional system instructions that define the model&apos;s behavior and role.
+                  Works with both Ollama and Gemini models.
+                </p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <Separator className="my-2" />
+
+            {/* Inference Parameters Section */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold">Edit Inference Parameters</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Adjust inference-time parameters to control the model&apos;s behavior.
+                  Note: Frequency and Presence Penalty only work with Ollama models.
+                </p>
+              </div>
+
+              <div className="grid gap-6">
+                {/* Seed */}
+                <div className="grid gap-2">
+                  <Label htmlFor="seed">Seed (for determinism)</Label>
+                  <Input
+                    id="seed"
+                    type="text"
+                    placeholder="Leave empty for random"
+                    value={seed}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setSeed("");
+                      } else {
+                        const num = Number.parseInt(val);
+                        if (!isNaN(num)) {
+                          setSeed(num);
+                        }
+                      }
+                    }}
+                    className="max-w-[200px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Random seed for reproducible outputs. Set this + temperature=0 for identical responses. (Ollama only)
+                  </p>
+                </div>
+
+                {/* Temperature */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="temperature">Temperature</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {temperature}
+                    </span>
+                  </div>
+                  <Input
+                    id="temperature"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setTemperature(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Controls randomness. Higher values = more creative output. (0.0 - 2.0)
+                  </p>
+                </div>
+
+                {/* Top P */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="topP">Top P</Label>
+                    <span className="text-sm text-muted-foreground">{topP}</span>
+                  </div>
+                  <Input
+                    id="topP"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={topP}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setTopP(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Nucleus sampling. Considers tokens until cumulative probability reaches this value. (0.0 - 1.0)
+                  </p>
+                </div>
+
+                {/* Top K */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="topK">Top K</Label>
+                    <span className="text-sm text-muted-foreground">{topK}</span>
+                  </div>
+                  <Input
+                    id="topK"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={topK}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value);
+                      if (!isNaN(val)) setTopK(val);
+                    }}
+                    className="max-w-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Consider only the top K tokens for sampling. (1 - 100)
+                  </p>
+                </div>
+
+                {/* Max Tokens */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="maxTokens">Max Tokens</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {maxTokens}
+                    </span>
+                  </div>
+                  <Input
+                    id="maxTokens"
+                    type="number"
+                    min="1"
+                    max="32768"
+                    value={maxTokens}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value);
+                      if (!isNaN(val)) setMaxTokens(val);
+                    }}
+                    className="max-w-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum number of tokens to generate. ~4 chars per token. (1 - 32768)
+                  </p>
+                </div>
+
+                {/* Frequency Penalty */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {frequencyPenalty}
+                    </span>
+                  </div>
+                  <Input
+                    id="frequencyPenalty"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={frequencyPenalty}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setFrequencyPenalty(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Reduces repetition of frequent tokens. Higher = less repetitive. (0.0 - 2.0, Ollama only)
+                  </p>
+                </div>
+
+                {/* Presence Penalty */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="presencePenalty">Presence Penalty</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {presencePenalty}
+                    </span>
+                  </div>
+                  <Input
+                    id="presencePenalty"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={presencePenalty}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setPresencePenalty(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Encourages new topics by penalizing repeated tokens. (0.0 - 2.0, Ollama only)
+                  </p>
+                </div>
+
+                {/* Stop Sequence */}
+                <div className="grid gap-2">
+                  <Label htmlFor="stopSequence">Stop Sequence</Label>
+                  <Input
+                    id="stopSequence"
+                    type="text"
+                    placeholder="e.g., \n\n, END, etc."
+                    value={stopSequence}
+                    onChange={(e) => setStopSequence(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Sequence where the model will stop generating further tokens.
+                    Leave empty for none.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                // Reset to defaults
+                setTemperature(0.7);
+                setTopP(0.9);
+                setTopK(40);
+                setMaxTokens(2048);
+                setFrequencyPenalty(0);
+                setPresencePenalty(0);
+                setStopSequence("");
+                setSeed("");
+                setSystemPrompt("");
+                setConfigureModelModal(false);
+                toast.success("Parameters reset to defaults and saved");
+              }}
+            >
+              Reset to Defaults
+            </Button>
+            <Button onClick={() => {
+              setConfigureModelModal(false);
+              toast.success("Model parameters updated");
+            }}>
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

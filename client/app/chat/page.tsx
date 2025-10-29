@@ -7,6 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -42,6 +45,8 @@ import {
   Download,
   Eraser,
   Mic,
+  Volume2,
+  Copy,
   Plus,
   X,
   FileText,
@@ -65,7 +70,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { MentionsInput, Mention } from "react-mentions";
-import SplashScreen from "../../splashScreen";
+import SplashScreen from "../splashScreen";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import ReactMarkdown from "react-markdown";
@@ -123,21 +128,98 @@ export default function ChatPage() {
   };
 
   // Add this component inside your ChatPage component, before the return statement
+  // Helper to wrap text nodes with highlighting spans
+  const wrapTextWithHighlight = (text: string, charIndex: number) => {
+    // If charIndex is -1, no highlighting (just return the text wrapped in spans)
+    const shouldHighlight = charIndex >= 0;
+
+    const segments: Array<{ text: string; start: number; end: number }> = [];
+    let pos = 0;
+
+    // Split into words and whitespace while preserving position
+    text.split(/(\s+)/).forEach((segment) => {
+      if (segment.length > 0) {
+        const start = pos;
+        const end = pos + segment.length;
+        segments.push({ text: segment, start, end });
+        pos = end;
+      }
+    });
+
+    return (
+      <>
+        {segments.map((segment, index) => {
+          const isCurrentWord = shouldHighlight && charIndex >= segment.start && charIndex < segment.end && /\S/.test(segment.text);
+          return (
+            <span
+              key={index}
+              className={`transition-colors duration-150 ${
+                isCurrentWord
+                  ? 'bg-sky-100/90 dark:bg-sky-300/40 rounded px-0.5'
+                  : ''
+              }`}
+            >
+              {segment.text}
+            </span>
+          );
+        })}
+      </>
+    );
+  };
+
   const MessageContent = ({
     content,
     isLoading,
     isUser = false,
+    isSpeakingThis = false,
+    currentCharIndex = 0,
+    spokenText = "",
   }: {
     content: string;
     isLoading?: boolean;
     isUser?: boolean;
+    isSpeakingThis?: boolean;
+    currentCharIndex?: number;
+    spokenText?: string;
   }) => {
     if (isLoading || content === "...") {
       return <LoadingDots />;
     }
 
+    // If TTS is active, render the stripped text with word highlighting and preserved line breaks
+    if (isSpeakingThis && spokenText) {
+      const lines = spokenText.split('\n');
+      let globalCharOffset = 0;
+
+      return (
+        <div className="markdown-content">
+          {lines.map((line, lineIndex) => {
+            const lineStart = globalCharOffset;
+            const lineEnd = globalCharOffset + line.length;
+
+            // Calculate relative position for highlighting within this line
+            const relativeCharIndex = currentCharIndex >= lineStart && currentCharIndex < lineEnd
+              ? currentCharIndex - lineStart
+              : -1; // -1 means no highlighting in this line
+
+            const lineElement = line.length > 0
+              ? wrapTextWithHighlight(line, relativeCharIndex)
+              : <span>&nbsp;</span>;
+
+            globalCharOffset = lineEnd + 1; // +1 for the newline character
+
+            return (
+              <div key={lineIndex} className="mb-3 leading-relaxed text-gray-800 dark:text-gray-200">
+                {lineElement}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
     return (
-      <div className="markdown-content">
+      <div className="markdown-content" data-speaking={isSpeakingThis ? "true" : "false"}>
         <Head>
           <title>
             AI Chat | PrivGPT Studio - Chat with Local & Cloud AI Models
@@ -443,7 +525,12 @@ export default function ChatPage() {
   const [exportChatSessionModal, setExportChatSessionModal] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
   const recognitionRef = useRef<any>(null);
+  const [finalTranscript, setFinalTranscript] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const ignoreOnEndRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const newChatSessionBtnRef = useRef<HTMLButtonElement | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -456,6 +543,30 @@ export default function ChatPage() {
     useState<AbortController | null>(null);
   const [streamingEnabled, setStreamingEnabled] = useState(true);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  // Text-to-Speech (Web Speech API)
+  const [speechSupported, setSpeechSupported] = useState<boolean>(false);
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [selectedVoice, setSelectedVoice] =
+    useState<SpeechSynthesisVoice | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(
+    null
+  );
+  const [currentCharIndex, setCurrentCharIndex] = useState<number>(0);
+  const [spokenText, setSpokenText] = useState<string>("");
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const canceledByUserRef = useRef<boolean>(false);
+  // Model Configuration Modal & Parameters
+  const [configureModelModal, setConfigureModelModal] = useState(false);
+  const [temperature, setTemperature] = useState(0.7);
+  const [topP, setTopP] = useState(0.9);
+  const [topK, setTopK] = useState(40);
+  const [maxTokens, setMaxTokens] = useState(2048);
+  const [frequencyPenalty, setFrequencyPenalty] = useState(0);
+  const [presencePenalty, setPresencePenalty] = useState(0);
+  const [stopSequence, setStopSequence] = useState("");
+  const [seed, setSeed] = useState<number | "">(""); // Empty string means random seed
+  const [systemPrompt, setSystemPrompt] = useState(""); // System prompt for model behavior
 
   useEffect(() => {
     const timer = setTimeout(() => setShowSplash(false), 4000);
@@ -477,6 +588,182 @@ export default function ChatPage() {
 
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // Initialize Web Speech API (TTS)
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      "speechSynthesis" in window &&
+      "SpeechSynthesisUtterance" in window
+    ) {
+      setSpeechSupported(true);
+      const loadVoices = () => {
+        const v = window.speechSynthesis.getVoices();
+        setVoices(v);
+        if (!selectedVoice && v.length > 0) {
+          const preferred =
+            v.find(
+              (voice) =>
+                voice.lang.toLowerCase().startsWith("en") &&
+                /google.*english|microsoft.*english/i.test(voice.name)
+            ) ||
+            v.find((voice) => voice.lang.toLowerCase().startsWith("en")) ||
+            v[0];
+          setSelectedVoice(preferred || null);
+        }
+      };
+
+      // Some browsers populate voices async
+      loadVoices();
+      const onChange = () => loadVoices();
+      (window.speechSynthesis as any).onvoiceschanged = onChange;
+
+      return () => {
+        (window.speechSynthesis as any).onvoiceschanged = null;
+      };
+    } else {
+      setSpeechSupported(false);
+    }
+  }, [selectedVoice]);
+
+  // Utility: strip markdown and code for clearer TTS
+  const stripMarkdown = (md: string) => {
+    if (!md) return "";
+    let text = md;
+
+    // Remove code blocks first
+    text = text.replace(/```[\s\S]*?```/g, ""); // remove fenced code blocks
+    text = text.replace(/`[^`]*?`/g, ""); // remove inline code
+
+    // Remove images
+    text = text.replace(/!\[[^\]]*\]\([^\)]*\)/g, "");
+
+    // Convert links to text (keep the link text, discard URL)
+    text = text.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, "$1");
+
+    // Remove specific markdown formatting patterns (most specific first)
+    text = text.replace(/\*\*\*(.+?)\*\*\*/gs, "$1"); // ***bold italic***
+    text = text.replace(/___(.+?)___/gs, "$1"); // ___bold italic___
+    text = text.replace(/\*\*(.+?)\*\*/gs, "$1"); // **bold**
+    text = text.replace(/__(.+?)__/gs, "$1"); // __bold__
+    text = text.replace(/\*(.+?)\*/gs, "$1"); // *italic*
+    text = text.replace(/_(.+?)_/gs, "$1"); // _italic_
+    text = text.replace(/~~(.+?)~~/gs, "$1"); // ~~strikethrough~~
+
+    // Remove headers (# symbols at start of line)
+    text = text.replace(/^#{1,6}\s+/gm, "");
+
+    // Remove blockquote markers
+    text = text.replace(/^>\s+/gm, "");
+
+    // Remove horizontal rules
+    text = text.replace(/^(\*{3,}|-{3,}|_{3,})$/gm, "");
+
+    // Preserve line breaks but collapse other consecutive whitespace
+    text = text.replace(/[^\S\n]+/g, " "); // collapse spaces/tabs but not newlines
+    text = text.replace(/ *\n */g, "\n"); // clean up spaces around newlines
+
+    return text.trim();
+  };
+
+  const stopSpeech = () => {
+    try {
+      canceledByUserRef.current = true;
+      if (speechSupported) {
+        window.speechSynthesis.cancel();
+      }
+    } finally {
+      setIsSpeaking(false);
+      setSpeakingMessageId(null);
+      setCurrentCharIndex(0);
+      setSpokenText("");
+      utteranceRef.current = null;
+    }
+  };
+
+  const speakText = (text: string, messageId: string) => {
+    if (!speechSupported) {
+      toast.error("Text-to-Speech not supported in this browser.");
+      return;
+    }
+    // Cancel any ongoing speech and start fresh
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    canceledByUserRef.current = false;
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.rate = 1.05; // slightly faster for responsiveness
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      setSpeakingMessageId(messageId);
+      setSpokenText(text);
+      setCurrentCharIndex(0);
+    };
+
+    utterance.onboundary = (event: SpeechSynthesisEvent) => {
+      if (event.name === 'word') {
+        setCurrentCharIndex(event.charIndex);
+      }
+    };
+
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setSpeakingMessageId(null);
+      setCurrentCharIndex(0);
+      setSpokenText("");
+      utteranceRef.current = null;
+      canceledByUserRef.current = false;
+    };
+    utterance.onerror = (e: any) => {
+      const code = e?.error || e?.name || "";
+      const wasCanceled = canceledByUserRef.current || code === "canceled" || code === "interrupted";
+      if (!wasCanceled) {
+        console.error("TTS error:", e);
+        toast.error("Failed to speak the message.");
+      }
+      setIsSpeaking(false);
+      setSpeakingMessageId(null);
+      setCurrentCharIndex(0);
+      setSpokenText("");
+      utteranceRef.current = null;
+      canceledByUserRef.current = false;
+    };
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleSpeakClick = (message: Message) => {
+    if (message.role !== "assistant") return;
+    if (message.content === "...") return; // don't read loading placeholder
+
+    if (isSpeaking && speakingMessageId === message.id) {
+      // toggle stop if already speaking this message
+      stopSpeech();
+      return;
+    }
+
+    const plain = stripMarkdown(message.content);
+    if (!plain) {
+      toast.error("Nothing to read aloud.");
+      return;
+    }
+    speakText(plain, message.id);
+  };
+
+  // Cleanup on unmount: stop any ongoing speech
+  useEffect(() => {
+    return () => {
+      try {
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          window.speechSynthesis.cancel();
+        }
+      } catch {}
+    };
   }, []);
 
   const stopGeneration = () => {
@@ -643,22 +930,31 @@ export default function ChatPage() {
           const activeSession =
             sessions.find((s: any) => s._id === sessionId) || sessions[0];
           const formattedMessages: Message[] = activeSession.messages?.map(
-            (msg: any, index: number) => ({
-              id: msg.id || (index + 2).toString(),
-              content: msg.content,
-              role: msg.role,
-              timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
-              ...(msg.uploaded_file
-                ? {
-                    file: {
-                      name: msg.uploaded_file.name,
-                      size: msg.uploaded_file.size,
-                      type: msg.uploaded_file.type,
-                      file: msg.uploaded_file.file,
-                    } as UploadedFile,
-                  }
-                : {}),
-            })
+            (msg: any, index: number) => {
+              const normalizedRole: "user" | "assistant" =
+                msg.role === "user"
+                  ? "user"
+                  : msg.role === "assistant" || msg.role === "bot"
+                  ? "assistant"
+                  : "assistant";
+
+              return {
+                id: msg.id || (index + 2).toString(),
+                content: msg.content,
+                role: normalizedRole,
+                timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+                ...(msg.uploaded_file
+                  ? {
+                      file: {
+                        name: msg.uploaded_file.name,
+                        size: msg.uploaded_file.size,
+                        type: msg.uploaded_file.type,
+                        file: msg.uploaded_file.file,
+                      } as UploadedFile,
+                    }
+                  : {}),
+              };
+            }
           );
 
           // ✅ Put welcomeMessage on top of history
@@ -773,6 +1069,23 @@ export default function ChatPage() {
     formData.append("model_name", selectedModel);
     formData.append("timestamp", userMessage.timestamp.toISOString());
     if (sessionId) formData.append("session_id", sessionId);
+
+    // append inference parameters
+    formData.append("temperature", temperature.toString());
+    formData.append("top_p", topP.toString());
+    formData.append("top_k", topK.toString());
+    formData.append("max_tokens", maxTokens.toString());
+    formData.append("frequency_penalty", frequencyPenalty.toString());
+    formData.append("presence_penalty", presencePenalty.toString());
+    if (stopSequence.trim()) {
+      formData.append("stop_sequence", stopSequence.trim());
+    }
+    if (seed !== "") {
+      formData.append("seed", seed.toString());
+    }
+    if (systemPrompt.trim()) {
+      formData.append("system_prompt", systemPrompt.trim());
+    }
 
     // append mention ids
     mentionIds.forEach((id) => formData.append("mention_session_ids[]", id));
@@ -1136,45 +1449,220 @@ export default function ChatPage() {
       console.warn("SpeechRecognition not supported");
       return;
     }
-    if (!SpeechRecognition) {
-      console.warn("SpeechRecognition not supported");
-      return;
-    }
+
     const recognition = new SpeechRecognition();
-    recognition.lang = "en-US";
+
+    // Configure for maximum accuracy
+    recognition.lang = "en-US"; // Change to your preferred language/dialect (en-GB, en-AU, en-IN, etc.)
     recognition.continuous = true;
     recognition.interimResults = true;
+    recognition.maxAlternatives = 5; // Reduced from 10 for better performance
 
-    recognition.onresult = (event: any) => {
-      let transcript = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
+    // Request the best possible audio quality and processing
+    // These are advanced settings that improve accuracy
+    if ('serviceURI' in recognition) {
+      // Use premium speech recognition endpoint if available
+      console.log("Using premium speech recognition service");
+    }
+
+    // Additional settings for improved recognition
+    if ('grammars' in recognition) {
+      // Grammar support (limited browser support but helps when available)
+      const SpeechGrammarList = (window as any).SpeechGrammarList || (window as any).webkitSpeechGrammarList;
+      if (SpeechGrammarList) {
+        const grammarList = new SpeechGrammarList();
+        recognition.grammars = grammarList;
       }
-      setInput(transcript.trim());
+    }
+
+    console.log("Speech recognition configured with maxAlternatives:", recognition.maxAlternatives);
+
+    // Handle recognition results with real-time interim and final transcripts
+    recognition.onresult = (event: any) => {
+      console.log("Speech recognition onresult triggered", event);
+      let interim = "";
+      let newFinalText = "";
+
+      // Process all results to build the full transcript
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+
+        // Use the highest confidence alternative (first one is usually best)
+        // Simplified approach - browser already ranks by confidence
+        let bestTranscript = result[0].transcript;
+        let bestConfidence = result[0].confidence || 1;
+
+        // Only check alternatives if confidence is low
+        if (bestConfidence < 0.8 && result.length > 1) {
+          for (let j = 1; j < Math.min(result.length, 3); j++) {
+            const alternative = result[j];
+            const confidence = alternative.confidence || 0;
+
+            if (confidence > bestConfidence) {
+              bestConfidence = confidence;
+              bestTranscript = alternative.transcript;
+            }
+          }
+        }
+
+        console.log(`Result ${i}: "${bestTranscript}" (confidence: ${bestConfidence.toFixed(3)}, isFinal: ${result.isFinal})`);
+
+        if (result.isFinal) {
+          // Apply cleanup only to final results
+          const processedTranscript = bestTranscript
+            // Fix common spacing issues
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          newFinalText += processedTranscript + " ";
+        } else {
+          interim += bestTranscript;
+        }
+      }
+
+      // Update states in batch
+      if (newFinalText) {
+        setFinalTranscript((prev) => {
+          const updated = prev + newFinalText;
+          console.log("Updated final transcript:", updated);
+          // Update input field with final + interim
+          setInput(updated + interim);
+          setInterimTranscript(interim);
+          return updated;
+        });
+      } else {
+        // Only interim results, update input field
+        setInterimTranscript(interim);
+        setFinalTranscript((currentFinal) => {
+          setInput(currentFinal + interim);
+          return currentFinal;
+        });
+      }
     };
 
-    recognition.onerror = (event: any) => {
-      console.error("Speech recognition error", event.error);
-      setIsRecording(false);
-      recognition.stop();
+    // Handle recognition start
+    recognition.onstart = () => {
+      ignoreOnEndRef.current = false;
+      console.log("✅ Speech recognition STARTED - microphone is active");
     };
 
+    // Handle recognition end - only stop when user manually stops
     recognition.onend = () => {
-      setIsRecording(false);
+      console.log("Recognition ended. isRecordingRef:", isRecordingRef.current, "ignoreOnEnd:", ignoreOnEndRef.current);
+
+      if (ignoreOnEndRef.current) {
+        ignoreOnEndRef.current = false;
+        return;
+      }
+
+      // If recognition ends unexpectedly while user wants to keep recording, restart it
+      // This handles browser-imposed limits but keeps it seamless
+      if (isRecordingRef.current) {
+        console.log("Recognition ended unexpectedly, restarting...");
+        // Small delay to prevent rapid restart loops
+        setTimeout(() => {
+          if (isRecordingRef.current && recognitionRef.current) {
+            try {
+              recognitionRef.current.start();
+              console.log("Recognition restarted successfully");
+            } catch (error) {
+              console.error("Error restarting:", error);
+              // Only stop if restart fails
+              setIsRecording(false);
+              isRecordingRef.current = false;
+              toast.error("Voice recognition stopped unexpectedly");
+            }
+          }
+        }, 100);
+      }
+    };
+
+    // Enhanced error handling
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error:", event.error);
+
+      // Clear any pending restart timeout
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+
+      switch (event.error) {
+        case "no-speech":
+          // Don't stop on no-speech, just log it - let onend handle continuation
+          console.log("No speech detected, continuing...");
+          break;
+        case "audio-capture":
+          toast.error("No microphone found. Please check your device.");
+          ignoreOnEndRef.current = true;
+          setIsRecording(false);
+          isRecordingRef.current = false;
+          break;
+        case "not-allowed":
+          toast.error("Microphone access denied. Please allow microphone access.");
+          ignoreOnEndRef.current = true;
+          setIsRecording(false);
+          isRecordingRef.current = false;
+          break;
+        case "aborted":
+          // Only log if user didn't manually stop
+          if (isRecordingRef.current) {
+            console.log("Recognition aborted unexpectedly");
+          }
+          break;
+        case "network":
+          toast.error("Network error. Check your internet connection.");
+          ignoreOnEndRef.current = true;
+          setIsRecording(false);
+          isRecordingRef.current = false;
+          break;
+        default:
+          // Don't show error toast for every error type - some are recoverable
+          console.error("Speech recognition error:", event.error);
+      }
     };
 
     recognitionRef.current = recognition;
-  }, []);
+
+    // Cleanup on unmount
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []); // Removed dependencies to prevent recreation
 
   const handleVoiceInput = () => {
     if (!recognitionRef.current) return;
 
     if (isRecording) {
-      recognitionRef.current.stop();
+      // Stop recording
       setIsRecording(false);
+      isRecordingRef.current = false;
+
+      // Use ignoreOnEnd to prevent restart
+      ignoreOnEndRef.current = true;
+      recognitionRef.current.stop();
+      console.log("Recording stopped by user");
+      toast.info("Voice input stopped");
     } else {
-      recognitionRef.current.start();
+      // Start recording
       setIsRecording(true);
+      isRecordingRef.current = true;
+      setFinalTranscript("");
+      setInterimTranscript("");
+      setInput("");
+
+      try {
+        recognitionRef.current.start();
+        console.log("Recording started by user");
+        toast.success("Microphone activated - start speaking!");
+      } catch (error) {
+        console.error("Error starting recognition:", error);
+        setIsRecording(false);
+        isRecordingRef.current = false;
+        toast.error("Could not start voice recognition");
+      }
     }
   };
 
@@ -1223,22 +1711,31 @@ export default function ChatPage() {
       const data = await response.json();
 
       const formattedMessages: Message[] = data.messages.map(
-        (msg: any, index: number) => ({
-          id: msg.id || `${Date.now()}-${index}`,
-          content: msg.content,
-          role: msg.role,
-          timestamp: new Date(msg.timestamp),
-          ...(msg.uploaded_file
-            ? {
-                file: {
-                  name: msg.uploaded_file.name,
-                  size: msg.uploaded_file.size,
-                  type: msg.uploaded_file.type,
-                  file: msg.uploaded_file.file,
-                } as UploadedFile,
-              }
-            : {}),
-        })
+        (msg: any, index: number) => {
+          const normalizedRole: "user" | "assistant" =
+            msg.role === "user"
+              ? "user"
+              : msg.role === "assistant" || msg.role === "bot"
+              ? "assistant"
+              : "assistant"; // default unknown roles to assistant
+
+          return {
+            id: msg.id || `${Date.now()}-${index}`,
+            content: msg.content,
+            role: normalizedRole,
+            timestamp: new Date(msg.timestamp),
+            ...(msg.uploaded_file
+              ? {
+                  file: {
+                    name: msg.uploaded_file.name,
+                    size: msg.uploaded_file.size,
+                    type: msg.uploaded_file.type,
+                    file: msg.uploaded_file.file,
+                  } as UploadedFile,
+                }
+              : {}),
+          };
+        }
       );
 
       const newWelcomeMessage: Message = {
@@ -1590,9 +2087,13 @@ export default function ChatPage() {
               <Settings className="w-4 h-4 mr-2" />
               Settings
             </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              <Info className="w-4 h-4 mr-2" />
-              Model Info
+            <Button
+              variant="ghost"
+              className="w-full justify-start"
+              onClick={() => setConfigureModelModal(true)}
+            >
+              <Settings className="w-4 h-4 mr-2" />
+              Configure Model
             </Button>
             <Button variant="ghost" className="w-full justify-start" asChild>
               <Link href="/">
@@ -1769,39 +2270,91 @@ export default function ChatPage() {
                     {message.role === "user" ? "U" : "AI"}
                   </AvatarFallback>
                 </Avatar>
-                <div
-                  className={`rounded-lg px-4 py-2 ${
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
-                  }`}
-                >
-                  {message.file && (
-                    <div className="mt-2 flex items-center space-x-2 bg-muted/50 rounded-lg p-2 max-w-xs mb-3">
-                      {getFileIcon(message.file.type)}
-                      <div>
-                        <p className="text-sm font-medium max-w-[100px] truncate">
-                          {message.file.name}
-                        </p>
-                        <p className="text-[0.6em]">
-                          {formatFileSize(message.file.size)}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <MessageContent
-                      content={message.content}
-                      isLoading={message.content === "..."}
-                      isUser={message.role === "user"}
-                    />
-                  </div>
-                  <p
-                    suppressHydrationWarning
-                    className="text-xs opacity-70 mt-1"
+                <div className="flex flex-col items-start">
+                  <div
+                    className={`rounded-lg px-4 py-2 ${
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted"
+                    }`}
                   >
-                    {message.timestamp.toLocaleTimeString()}
-                  </p>
+                    {message.file && (
+                      <div className="mt-2 flex items-center space-x-2 bg-muted/50 rounded-lg p-2 max-w-xs mb-3">
+                        {getFileIcon(message.file.type)}
+                        <div>
+                          <p className="text-sm font-medium max-w-[100px] truncate">
+                            {message.file.name}
+                          </p>
+                          <p className="text-[0.6em]">
+                            {formatFileSize(message.file.size)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <MessageContent
+                        content={message.content}
+                        isLoading={message.content === "..."}
+                        isUser={message.role === "user"}
+                        isSpeakingThis={speakingMessageId === message.id}
+                        currentCharIndex={currentCharIndex}
+                        spokenText={spokenText}
+                      />
+                    </div>
+                    <p
+                      suppressHydrationWarning
+                      className="text-xs opacity-70 mt-1"
+                    >
+                      {message.timestamp.toLocaleTimeString()}
+                    </p>
+                  </div>
+                  {/* Controls under the message bubble (bottom-left) */}
+                  <div className="mt-1 flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Copy message"
+                      aria-label="Copy message"
+                      disabled={!message.content || message.content === "..."}
+                      onClick={() => {
+                        navigator.clipboard
+                          .writeText(message.content)
+                          .then(() => toast.success("Message copied"))
+                          .catch(() => toast.error("Copy failed"));
+                      }}
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    {message.role === "assistant" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={
+                          speakingMessageId === message.id
+                            ? "Stop reading"
+                            : "Read aloud"
+                        }
+                        aria-label={
+                          speakingMessageId === message.id
+                            ? "Stop reading"
+                            : "Read aloud"
+                        }
+                        disabled={!speechSupported || message.content === "..."}
+                        onClick={() => handleSpeakClick(message)}
+                        className={
+                          speakingMessageId === message.id
+                            ? "bg-red-500 text-white hover:bg-red-600"
+                            : ""
+                        }
+                      >
+                        {speakingMessageId === message.id ? (
+                          <Square className="w-4 h-4" />
+                        ) : (
+                          <Volume2 className="w-4 h-4" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1858,11 +2411,16 @@ export default function ChatPage() {
               variant="ghost"
               size="sm"
               onClick={handleVoiceInput}
-              className={`${isRecording ? "text-red-500" : ""}`}
+              className={`${
+                isRecording
+                  ? "text-red-500 animate-pulse bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/40"
+                  : "hover:text-primary"
+              } transition-all duration-200`}
+              title={isRecording ? "Stop recording" : "Start voice input"}
             >
-              <Mic className="w-4 h-4" />
+              <Mic className={`w-4 h-4 ${isRecording ? "animate-pulse" : ""}`} />
               {isRecording && (
-                <span className="ml-1 text-xs">Recording...</span>
+                <span className="ml-1 text-xs font-medium">Listening...</span>
               )}
             </Button>
           </div>
@@ -1885,63 +2443,78 @@ export default function ChatPage() {
               <Plus className="w-4 h-4" />
             </Button>
 
-            {chatSessionSuggestions.length > 0 ? (
-              <MentionsInput
-                value={input}
-                onChange={(_event, newValue) => setInput(newValue)}
-                placeholder="Type your message and use @ to mention chats..."
-                style={{
-                  control: {
-                    backgroundColor: "transparent",
-                    fontSize: 14,
-                  },
-                  highlighter: {
-                    padding: "0.5rem 0.75rem",
-                    border: "none",
-                  },
-                  input: {
-                    padding: "0.5rem 0.75rem",
-                    border: "none",
-                    outline: "none",
-                    backgroundColor: "transparent",
-                  },
-                  suggestions: {
-                    list: {
-                      backgroundColor: "white",
-                      border: "1px solid rgba(0,0,0,0.15)",
+            <div className="relative flex-1">
+              {/* Styled overlay with color-coded transcription text */}
+              {isRecording && (finalTranscript || interimTranscript) && (
+                <div className="absolute inset-0 p-2 px-3 pointer-events-none overflow-auto z-10 flex items-start">
+                  <div className="text-sm leading-relaxed whitespace-pre-wrap break-words w-full pt-[2px]">
+                    <span className="text-foreground">{finalTranscript}</span>
+                    <span className="text-muted-foreground italic">{interimTranscript}</span>
+                  </div>
+                </div>
+              )}
+
+              {chatSessionSuggestions.length > 0 ? (
+                <MentionsInput
+                  value={input}
+                  onChange={(_event, newValue) => setInput(newValue)}
+                  placeholder="Type your message and use @ to mention chats..."
+                  style={{
+                    control: {
+                      backgroundColor: "transparent",
                       fontSize: 14,
                     },
-                    item: {
-                      padding: "5px 15px",
-                      "&focused": {
-                        backgroundColor: "#f5f5f5",
+                    highlighter: {
+                      padding: "0.5rem 0.75rem",
+                      border: "none",
+                    },
+                    input: {
+                      padding: "0.5rem 0.75rem",
+                      border: "none",
+                      outline: "none",
+                      backgroundColor: "transparent",
+                      color: isRecording ? "transparent" : undefined,
+                    },
+                    suggestions: {
+                      list: {
+                        backgroundColor: "white",
+                        border: "1px solid rgba(0,0,0,0.15)",
+                        fontSize: 14,
+                      },
+                      item: {
+                        padding: "5px 15px",
+                        "&focused": {
+                          backgroundColor: "#f5f5f5",
+                        },
                       },
                     },
-                  },
-                }}
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:border-input disabled:cursor-not-allowed disabled:opacity-50"
-                onKeyDown={handleKeyPress}
-              >
-                <Mention
-                  trigger="@"
-                  markup="@\[__display__\]\(__id__\)"
-                  data={chatSessionSuggestions}
-                  displayTransform={(id: string, display: string) =>
-                    `@${display}`
-                  }
-                  style={{ backgroundColor: "#e0e2e4" }}
-                  appendSpaceOnAdd
+                  }}
+                  className="flex min-h-[80px] w-full rounded-md border border-input bg-background text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:border-input disabled:cursor-not-allowed disabled:opacity-50"
+                  onKeyDown={handleKeyPress}
+                >
+                  <Mention
+                    trigger="@"
+                    markup="@\[__display__\]\(__id__\)"
+                    data={chatSessionSuggestions}
+                    displayTransform={(id: string, display: string) =>
+                      `@${display}`
+                    }
+                    style={{ backgroundColor: "#e0e2e4" }}
+                    appendSpaceOnAdd
+                  />
+                </MentionsInput>
+              ) : (
+                <Textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Type your message in markdown..."
+                  className={`flex-1 resize-none min-h-[80px] ${
+                    isRecording ? "text-transparent caret-foreground" : ""
+                  }`}
                 />
-              </MentionsInput>
-            ) : (
-              <Textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyPress}
-                placeholder="Type your message in markdown..."
-                className="flex-1 resize-none min-h-[80px]"
-              />
-            )}
+              )}
+            </div>
             {isStreaming ? (
               <Button
                 onClick={stopGeneration}
@@ -2066,6 +2639,272 @@ export default function ChatPage() {
               onClick={() => handleDeleteChatSession(sessionId)}
             >
               Delete Chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configure Model Parameters Modal */}
+      <Dialog open={configureModelModal} onOpenChange={setConfigureModelModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configure Model</DialogTitle>
+            <DialogDescription>
+              Customize system prompt and inference parameters for the model
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-6 py-4">
+            {/* System Prompt Section */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-semibold">System Prompt</h3>
+              <div className="grid gap-2">
+                <textarea
+                  id="systemPrompt"
+                  className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  placeholder="e.g., You are a helpful assistant that..."
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Optional system instructions that define the model&apos;s behavior and role.
+                  Works with both Ollama and Gemini models.
+                </p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <Separator className="my-2" />
+
+            {/* Inference Parameters Section */}
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-lg font-semibold">Edit Inference Parameters</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Adjust inference-time parameters to control the model&apos;s behavior.
+                  Note: Frequency and Presence Penalty only work with Ollama models.
+                </p>
+              </div>
+
+              <div className="grid gap-6">
+                {/* Seed */}
+                <div className="grid gap-2">
+                  <Label htmlFor="seed">Seed (for determinism)</Label>
+                  <Input
+                    id="seed"
+                    type="text"
+                    placeholder="Leave empty for random"
+                    value={seed}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "") {
+                        setSeed("");
+                      } else {
+                        const num = Number.parseInt(val);
+                        if (!isNaN(num)) {
+                          setSeed(num);
+                        }
+                      }
+                    }}
+                    className="max-w-[200px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Random seed for reproducible outputs. Set this + temperature=0 for identical responses. (Ollama only)
+                  </p>
+                </div>
+
+                {/* Temperature */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="temperature">Temperature</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {temperature}
+                    </span>
+                  </div>
+                  <Input
+                    id="temperature"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setTemperature(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Controls randomness. Higher values = more creative output. (0.0 - 2.0)
+                  </p>
+                </div>
+
+                {/* Top P */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="topP">Top P</Label>
+                    <span className="text-sm text-muted-foreground">{topP}</span>
+                  </div>
+                  <Input
+                    id="topP"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={topP}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setTopP(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Nucleus sampling. Considers tokens until cumulative probability reaches this value. (0.0 - 1.0)
+                  </p>
+                </div>
+
+                {/* Top K */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="topK">Top K</Label>
+                    <span className="text-sm text-muted-foreground">{topK}</span>
+                  </div>
+                  <Input
+                    id="topK"
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={topK}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value);
+                      if (!isNaN(val)) setTopK(val);
+                    }}
+                    className="max-w-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Consider only the top K tokens for sampling. (1 - 100)
+                  </p>
+                </div>
+
+                {/* Max Tokens */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="maxTokens">Max Tokens</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {maxTokens}
+                    </span>
+                  </div>
+                  <Input
+                    id="maxTokens"
+                    type="number"
+                    min="1"
+                    max="32768"
+                    value={maxTokens}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value);
+                      if (!isNaN(val)) setMaxTokens(val);
+                    }}
+                    className="max-w-[120px]"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Maximum number of tokens to generate. ~4 chars per token. (1 - 32768)
+                  </p>
+                </div>
+
+                {/* Frequency Penalty */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="frequencyPenalty">Frequency Penalty</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {frequencyPenalty}
+                    </span>
+                  </div>
+                  <Input
+                    id="frequencyPenalty"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={frequencyPenalty}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setFrequencyPenalty(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Reduces repetition of frequent tokens. Higher = less repetitive. (0.0 - 2.0, Ollama only)
+                  </p>
+                </div>
+
+                {/* Presence Penalty */}
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="presencePenalty">Presence Penalty</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {presencePenalty}
+                    </span>
+                  </div>
+                  <Input
+                    id="presencePenalty"
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={presencePenalty}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setPresencePenalty(val);
+                    }}
+                    className="cursor-pointer"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Encourages new topics by penalizing repeated tokens. (0.0 - 2.0, Ollama only)
+                  </p>
+                </div>
+
+                {/* Stop Sequence */}
+                <div className="grid gap-2">
+                  <Label htmlFor="stopSequence">Stop Sequence</Label>
+                  <Input
+                    id="stopSequence"
+                    type="text"
+                    placeholder="e.g., \n\n, END, etc."
+                    value={stopSequence}
+                    onChange={(e) => setStopSequence(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Sequence where the model will stop generating further tokens.
+                    Leave empty for none.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                // Reset to defaults
+                setTemperature(0.7);
+                setTopP(0.9);
+                setTopK(40);
+                setMaxTokens(2048);
+                setFrequencyPenalty(0);
+                setPresencePenalty(0);
+                setStopSequence("");
+                setSeed("");
+                setSystemPrompt("");
+                setConfigureModelModal(false);
+                toast.success("Parameters reset to defaults and saved");
+              }}
+            >
+              Reset to Defaults
+            </Button>
+            <Button onClick={() => {
+              setConfigureModelModal(false);
+              toast.success("Model parameters updated");
+            }}>
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>

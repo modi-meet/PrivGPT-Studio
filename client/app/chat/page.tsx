@@ -2647,6 +2647,12 @@ export default function ChatPage() {
       {/* Configure Model Parameters Modal */}
       <Dialog open={configureModelModal} onOpenChange={setConfigureModelModal}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Configure Model</DialogTitle>
+            <DialogDescription>
+              Customize system prompt and inference parameters for the model
+            </DialogDescription>
+          </DialogHeader>
           <div className="grid gap-6 py-4">
             {/* System Prompt Section */}
             <div className="space-y-4">
@@ -2721,7 +2727,10 @@ export default function ChatPage() {
                     max="2"
                     step="0.1"
                     value={temperature}
-                    onChange={(e) => setTemperature(Number.parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setTemperature(val);
+                    }}
                     className="cursor-pointer"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2742,7 +2751,10 @@ export default function ChatPage() {
                     max="1"
                     step="0.05"
                     value={topP}
-                    onChange={(e) => setTopP(Number.parseFloat(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setTopP(val);
+                    }}
                     className="cursor-pointer"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2762,7 +2774,10 @@ export default function ChatPage() {
                     min="1"
                     max="100"
                     value={topK}
-                    onChange={(e) => setTopK(Number.parseInt(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value);
+                      if (!isNaN(val)) setTopK(val);
+                    }}
                     className="max-w-[120px]"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2784,7 +2799,10 @@ export default function ChatPage() {
                     min="1"
                     max="32768"
                     value={maxTokens}
-                    onChange={(e) => setMaxTokens(Number.parseInt(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number.parseInt(e.target.value);
+                      if (!isNaN(val)) setMaxTokens(val);
+                    }}
                     className="max-w-[120px]"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2807,9 +2825,10 @@ export default function ChatPage() {
                     max="2"
                     step="0.1"
                     value={frequencyPenalty}
-                    onChange={(e) =>
-                      setFrequencyPenalty(Number.parseFloat(e.target.value))
-                    }
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setFrequencyPenalty(val);
+                    }}
                     className="cursor-pointer"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2832,9 +2851,10 @@ export default function ChatPage() {
                     max="2"
                     step="0.1"
                     value={presencePenalty}
-                    onChange={(e) =>
-                      setPresencePenalty(Number.parseFloat(e.target.value))
-                    }
+                    onChange={(e) => {
+                      const val = Number.parseFloat(e.target.value);
+                      if (!isNaN(val)) setPresencePenalty(val);
+                    }}
                     className="cursor-pointer"
                   />
                   <p className="text-xs text-muted-foreground">
@@ -2874,7 +2894,8 @@ export default function ChatPage() {
                 setStopSequence("");
                 setSeed("");
                 setSystemPrompt("");
-                toast.success("Parameters reset to defaults");
+                setConfigureModelModal(false);
+                toast.success("Parameters reset to defaults and saved");
               }}
             >
               Reset to Defaults

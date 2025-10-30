@@ -4,6 +4,10 @@ import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import axios from "axios";
+import React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +55,9 @@ const formSchema = z
   });
 
 export function SignUpForm() {
+  const router = useRouter();
+  const [isLoading, setIsLoading] = React.useState(false);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -64,8 +71,23 @@ export function SignUpForm() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Sign Up Values:", values);
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setIsLoading(true);
+    try {
+      const response = await axios.post(
+        "http://127.0.0.1:5000/api/auth/register",
+        values
+      );
+
+      toast.success(response.data.message || "Registration successful!");
+      router.push("/sign-in");
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.error || "Registration failed. Please try again.";
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -86,7 +108,7 @@ export function SignUpForm() {
                 <FormItem>
                   <FormLabel>Email *</FormLabel>
                   <FormControl>
-                    <Input placeholder="name@example.com" {...field} />
+                    <Input placeholder="name@example.com" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -99,7 +121,7 @@ export function SignUpForm() {
                 <FormItem>
                   <FormLabel>Password *</FormLabel>
                   <FormControl>
-                    <Input type="password" {...field} />
+                    <Input type="password" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -112,7 +134,7 @@ export function SignUpForm() {
                 <FormItem>
                   <FormLabel>Confirm Password *</FormLabel>
                   <FormControl>
-                    <Input type="password" {...field} />
+                    <Input type="password" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -132,7 +154,7 @@ export function SignUpForm() {
                 <FormItem>
                   <FormLabel>Username</FormLabel>
                   <FormControl>
-                    <Input placeholder="your username" {...field} />
+                    <Input placeholder="yourusername" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -147,6 +169,7 @@ export function SignUpForm() {
                   <Select
                     onValueChange={field.onChange}
                     defaultValue={field.value}
+                    disabled={isLoading}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -154,8 +177,8 @@ export function SignUpForm() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="female">Female</SelectItem>
                       <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
@@ -171,7 +194,7 @@ export function SignUpForm() {
                   <FormItem>
                     <FormLabel>Date of Birth</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <Input type="date" {...field} disabled={isLoading} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -184,7 +207,7 @@ export function SignUpForm() {
                   <FormItem>
                     <FormLabel>Phone</FormLabel>
                     <FormControl>
-                      <Input type="tel" placeholder="123-456-7890" {...field} />
+                      <Input type="tel" placeholder="123-456-7890" {...field} disabled={isLoading} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -192,8 +215,8 @@ export function SignUpForm() {
               />
             </div>
 
-            <Button type="submit" className="w-full mt-4">
-              Create an account
+            <Button type="submit" className="w-full mt-4" disabled={isLoading}>
+              {isLoading ? "Creating account..." : "Create an account"}
             </Button>
           </form>
         </Form>

@@ -4,6 +4,11 @@ import * as z from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import axios from "axios";
+import React from "react";
+import { useAuth } from "@/context/AuthContext";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,8 +26,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import Header from "@/components/ui/header";
-import Footer from "@/components/ui/footer";
 import { Input } from "@/components/ui/input";
 import { Head } from "react-day-picker";
 
@@ -35,6 +38,10 @@ const formSchema = z.object({
 });
 
 export function SignInForm() {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = React.useState(false);
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -43,8 +50,26 @@ export function SignInForm() {
     },
   });
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
-    console.log("Sign In Values:", values);
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setIsLoading(true);
+    try {
+      const response = await axios.post(
+        "http://127.0.0.1:5000/api/auth/login",
+        values
+      );
+
+      const { token } = response.data;
+      login(token);
+
+      toast.success("Login successful!");
+      router.push("/chat");
+    } catch (error: any) {
+      const errorMessage =
+        error.response?.data?.error || "Login failed. Please try again.";
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -65,7 +90,7 @@ export function SignInForm() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="name@example.com" {...field} />
+                    <Input placeholder="name@example.com" {...field} disabled={isLoading}/>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -78,14 +103,14 @@ export function SignInForm() {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" {...field} />
+                    <Input type="password" {...field} disabled={isLoading} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full">
-              Sign in
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
         </Form>

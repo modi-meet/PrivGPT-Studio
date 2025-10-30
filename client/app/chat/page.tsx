@@ -2554,17 +2554,32 @@ export default function ChatPage() {
               <PlusCircle className="w-4 h-4 mr-2" />
               New Chat
             </Button>
-            <Button variant="ghost" className="w-full justify-start">
-              <Settings className="w-4 h-4 mr-2" />
-              Settings
-            </Button>
             <Button
               variant="ghost"
               className="w-full justify-start"
               onClick={() => setConfigureModelModal(true)}
             >
               <Settings className="w-4 h-4 mr-2" />
-              Configure Model
+              Settings
+            </Button>
+            <Button variant="ghost" className="w-full justify-start">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="lucide lucide-info w-4 h-4 mr-2"
+              >
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 16v-4"></path>
+                <path d="M12 8h.01"></path>
+              </svg>
+              Model Info
             </Button>
             <Button variant="ghost" className="w-full justify-start" asChild>
               <Link href="/">
@@ -3217,11 +3232,11 @@ export default function ChatPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Configure Model Parameters Modal */}
+      {/* Settings Modal */}
       <Dialog open={configureModelModal} onOpenChange={setConfigureModelModal}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Configure Model</DialogTitle>
+            <DialogTitle>Settings</DialogTitle>
             <DialogDescription>
               Customize system prompt and inference parameters for the model
             </DialogDescription>

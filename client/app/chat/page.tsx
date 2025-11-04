@@ -10,6 +10,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -55,6 +57,7 @@ import {
   PlusCircle,
   Square,
   ChevronLeft,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -80,7 +83,6 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import Head from "next/head";
 import Image from "next/image";
 import { useTheme } from "@/components/theme-provider";
 
@@ -107,6 +109,8 @@ interface UploadedFile {
 
 export default function ChatPage() {
   const { darkMode } = useTheme();
+  const router = useRouter();
+  const { token, isLoading: isAuthLoading, logout } = useAuth();
 
   // Loading dots animation component
   const LoadingDots = () => {
@@ -220,59 +224,7 @@ export default function ChatPage() {
 
     return (
       <div className="markdown-content" data-speaking={isSpeakingThis ? "true" : "false"}>
-        <Head>
-          <title>
-            AI Chat | PrivGPT Studio - Chat with Local & Cloud AI Models
-          </title>
-          <meta
-            name="description"
-            content="Experience seamless, private conversations with AI. Chat in real-time using powerful local models or cloud-powered Gemini. Export your history and manage your chats effortlessly."
-          />
-          <meta
-            name="keywords"
-            content="AI chat, real-time AI conversation, local AI models, Gemini AI chat, private AI chat, chat with AI, export chat history, PrivGPT Studio chat"
-          />
-
-          {/* Open Graph */}
-          <meta
-            property="og:title"
-            content="AI Chat | PrivGPT Studio - Chat with Local & Cloud AI Models"
-          />
-          <meta
-            property="og:description"
-            content="Experience seamless, private conversations with AI. Chat in real-time using powerful local models or cloud-powered Gemini."
-          />
-          <meta property="og:type" content="website" />
-          <meta
-            property="og:url"
-            content="https://privgpt-studio.vercel.app/chat"
-          />
-          <meta
-            property="og:image"
-            content="https://privgpt-studio.vercel.app/logo.png"
-          />
-          <meta property="og:image:width" content="1200" />
-          <meta property="og:image:height" content="630" />
-          <meta
-            property="og:image:alt"
-            content="PrivGPT Studio AI Chat Interface Preview"
-          />
-
-          {/* Twitter */}
-          <meta name="twitter:card" content="summary_large_image" />
-          <meta name="twitter:title" content="AI Chat | PrivGPT Studio" />
-          <meta
-            name="twitter:description"
-            content="Chat in real-time with AI using local or cloud models. A seamless and private conversation experience."
-          />
-          <meta
-            name="twitter:image"
-            content="https://privgpt-studio.vercel.app/logo.png"
-          />
-
-          {/* Canonical */}
-          <link rel="canonical" href="https://privgpt-studio.vercel.app/chat" />
-        </Head>
+        
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
           rehypePlugins={[rehypeKatex]}
@@ -532,7 +484,6 @@ export default function ChatPage() {
   const restartTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const ignoreOnEndRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const newChatSessionBtnRef = useRef<HTMLButtonElement | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState<string>("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -626,6 +577,15 @@ export default function ChatPage() {
       setSpeechSupported(false);
     }
   }, [selectedVoice]);
+
+  const onLogoutClick = () => {
+    logout(); // Clears token from context/localStorage
+    setChatSessions([welcomeSession]); // Reset chat list
+    setSessionId(welcomeSession.id); // Reset to welcome chat
+    setMessages([welcomeMessage]); // Reset messages
+    router.push("/"); // Send to home page
+    toast.success("Logged out successfully.");
+  };
 
   // Utility: strip markdown and code for clearer TTS
   const stripMarkdown = (md: string) => {
@@ -868,21 +828,39 @@ export default function ChatPage() {
 
   useEffect(() => {
     const fetchChatSessionHistory = async () => {
+      if (!token) {
+        // Guest user: just show the welcome session and stop.
+        setTimeout(() => {
+          setSessionId(welcomeSession.id);
+          setMessages([welcomeMessage]);
+          setChatSessions([welcomeSession]);
+        }, 1);
+        return;
+      }
+
       const storedSessions = JSON.parse(
         localStorage.getItem("chat_sessions") || "[]"
       );
 
       // ✅ If no previous sessions, just show welcome
       if (storedSessions.length === 0) {
-        setSessionId(welcomeSession.id); // "1"
-        setMessages([welcomeMessage]);
-        setChatSessions([welcomeSession]);
-        if (newChatSessionBtnRef.current) {
-          newChatSessionBtnRef.current.disabled = true;
-        }
+        setTimeout(() => {
+          setSessionId(welcomeSession.id); // "1"
+          setMessages([welcomeMessage]);
+          setChatSessions([welcomeSession]);
+        }, 1);
         return;
       }
 
+      // ✅ Only reset to welcomeSession if you are currently on it
+      if (sessionId === welcomeSession.id || !sessionId) {
+        setTimeout(() => {
+          setMessages([welcomeMessage]);
+        }, 1);
+        return;
+      }
+
+      // ✅ Otherwise, load messages for currently active sessionId
       try {
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_BACKEND_URL}/chat/history`,
@@ -912,21 +890,8 @@ export default function ChatPage() {
             }
           );
 
-          // ✅ Always keep welcomeSession first in the list
           setChatSessions([...transformedSessions]);
 
-          // ✅ Only reset to welcomeSession if you are currently on it
-          if (sessionId === welcomeSession.id || !sessionId) {
-            setSessionId(welcomeSession.id); // stays as "1"
-            if (newChatSessionBtnRef.current)
-              newChatSessionBtnRef.current.disabled = true;
-
-            // show only welcome message if welcome is selected
-            setMessages([welcomeMessage]);
-            return;
-          }
-
-          // ✅ Otherwise, load messages for currently active sessionId
           const activeSession =
             sessions.find((s: any) => s._id === sessionId) || sessions[0];
           const formattedMessages: Message[] = activeSession.messages?.map(
@@ -957,7 +922,6 @@ export default function ChatPage() {
             }
           );
 
-          // ✅ Put welcomeMessage on top of history
           setMessages([welcomeMessage, ...(formattedMessages || [])]);
         }
       } catch (error) {
@@ -966,56 +930,7 @@ export default function ChatPage() {
     };
 
     fetchChatSessionHistory();
-  }, [sessionId, editedName]);
-  useEffect(() => {
-    if (newChatSessionBtnRef.current && !showSplash) {
-      newChatSessionBtnRef.current.disabled = true;
-    }
-  }, [showSplash]);
-  useEffect(() => {
-    if (chatSessions.some((session) => session.id === "1")) {
-      // welcomeSession exists, disable new chat button
-      if (newChatSessionBtnRef.current) {
-        newChatSessionBtnRef.current.disabled = true;
-      }
-    } else {
-      // no welcome session, allow new chat
-      if (newChatSessionBtnRef.current && sessionId != "1") {
-        newChatSessionBtnRef.current.disabled = false;
-      }
-    }
-  }, [chatSessions]);
-
-  useEffect(() => {
-    let wasOffline = false; // track previous state
-
-    function checkStatus() {
-      const isNowOnline = navigator.onLine;
-      setStatus(isNowOnline ? "Online" : "Offline");
-
-      if (!isNowOnline && !wasOffline) {
-        wasOffline = true;
-
-        if (selectedModelType === "cloud" && localModels.length > 0) {
-          setSelectedModel(localModels[0]);
-          setSelectedModelType("local");
-          toast.warning("You are offline. Switched to local model.");
-        } else {
-          toast.error("You are offline and no local models are available.");
-        }
-      }
-
-      if (isNowOnline) {
-        wasOffline = false;
-      }
-    }
-
-    checkStatus(); // Run once immediately
-    const interval = setInterval(checkStatus, 5000); // Poll every 30s
-
-    return () => clearInterval(interval);
-  }, [localModels, selectedModelType]); // Add selectedModelType to dependencies
-
+  }, [sessionId, editedName, token]);
   const handleSend = async () => {
     if (!input.trim()) return;
 
@@ -1112,7 +1027,7 @@ export default function ChatPage() {
         const data = await response.json();
         const bot_response = data.response || "No Reply";
 
-        if (sessionId === "1" && data.session_id) {
+        if (sessionId === "1" && data.session_id && token) {
           setSessionId(data.session_id);
           localStorage.setItem(
             "chat_sessions",
@@ -1140,13 +1055,6 @@ export default function ChatPage() {
         ) {
           // If server didn't auto fallback (e.g., streaming disabled), try client side
           fallbackToGemini(bot_response);
-        }
-
-        if (
-          newChatSessionBtnRef.current &&
-          newChatSessionBtnRef.current.disabled
-        ) {
-          newChatSessionBtnRef.current.disabled = false;
         }
 
         setMessages((prev) => [...prev, assistantMessage]);
@@ -1233,7 +1141,7 @@ export default function ChatPage() {
                     break;
 
                   case "complete":
-                    if (data.session_id && sessionId === "1") {
+                    if (data.session_id && sessionId === "1" && token) {
                       setSessionId(data.session_id);
                       localStorage.setItem(
                         "chat_sessions",
@@ -1280,13 +1188,6 @@ export default function ChatPage() {
             }
           }
         }
-      }
-
-      if (
-        newChatSessionBtnRef.current &&
-        newChatSessionBtnRef.current.disabled
-      ) {
-        newChatSessionBtnRef.current.disabled = false;
       }
 
       // Fallback detection after streaming
@@ -1696,9 +1597,6 @@ export default function ChatPage() {
         setChatSessions((prev) =>
           prev.filter((chatSession) => chatSession.id !== "1")
         );
-        if (newChatSessionBtnRef.current && id != "1") {
-          newChatSessionBtnRef.current.disabled = false;
-        }
       }
 
       setSessionId(id);
@@ -1767,10 +1665,6 @@ export default function ChatPage() {
       if (!isChatSessionsCollapsed)
         setIsChatSessionsCollapsed(!isChatSessionsCollapsed);
     }
-
-    if (newChatSessionBtnRef.current) {
-      newChatSessionBtnRef.current.disabled = true;
-    }
   };
 
   const handleRenameSession = (id: string) => {
@@ -1828,9 +1722,6 @@ export default function ChatPage() {
         setChatSessions([welcomeSession]);
         setSessionId("1");
         setMessages([welcomeMessage]);
-        if (newChatSessionBtnRef.current) {
-          newChatSessionBtnRef.current.disabled = true;
-        }
       }
 
       // Close modal
@@ -1892,6 +1783,20 @@ export default function ChatPage() {
       setChatSessionSuggestions(suggestions);
     }
   }, [chatSessions]);
+
+  const onNewChatClick = () => {
+    if (isAuthLoading) return; 
+
+    if (!token) {
+      toast.error("Please sign in to create new chats.");
+      router.push("/sign-in");
+    } else {
+      handleNewChatSession();
+      if (window.innerWidth < 1024) {
+        setIsSidebarOpen(false);
+      }
+    }
+  };
 
   if (showSplash) return <SplashScreen />;
 
@@ -2069,16 +1974,9 @@ export default function ChatPage() {
               </CollapsibleContent>
             </Collapsible>
             <Button
-              ref={newChatSessionBtnRef}
               variant="ghost"
               className="w-full justify-start"
-              onClick={() => {
-                handleNewChatSession();
-                // Close sidebar on mobile after creating new chat
-                if (window.innerWidth < 1024) {
-                  setIsSidebarOpen(false);
-                }
-              }}
+              onClick={onNewChatClick}
             >
               <PlusCircle className="w-4 h-4 mr-2" />
               New Chat
@@ -2101,6 +1999,17 @@ export default function ChatPage() {
                 Home
               </Link>
             </Button>
+
+            {token && (
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-destructive"
+              onClick={onLogoutClick}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Log Out
+            </Button>
+          )}
           </nav>
 
           {/* Model Selection */}

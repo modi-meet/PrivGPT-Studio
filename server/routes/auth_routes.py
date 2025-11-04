@@ -28,7 +28,7 @@ def register():
             return jsonify({"error": "Email already registered"}), 409
 
         # Hash the password
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
         username = data.get('username')
         if not username:
@@ -65,15 +65,19 @@ def login():
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
 
+        # Find user
         users_collection = get_users_collection()
         user = users_collection.find_one({"email": email})
 
         if not user:
             return jsonify({"error": "Invalid credentials"}), 401
+        
+        user_password_bytes = password.encode('utf-8')
+        stored_hash_bytes = user['hashed_password'].encode('utf-8')
 
-        if bcrypt.checkpw(password.encode('utf-8'), user['hashed_password']):
+        if bcrypt.checkpw(user_password_bytes, stored_hash_bytes):
             secret_key = current_app.config['JWT_SECRET_KEY']
-
+            
             token = jwt.encode({
                 'user_id': str(user['_id']),
                 'email': user['email'],
